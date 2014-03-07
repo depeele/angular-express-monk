@@ -1,7 +1,7 @@
 {
   "name": "angular-express-monk",
   "version": "0.0.1",
-  "description": "A general base server for an Angular web-app using Express and Monk/MongoDb.",
+  "description": "A minimal base server for an Angular web-app using server-side Express and Monk/MongoDB.",
   "engines": {
       "node":   ">= v0.10"
   },
