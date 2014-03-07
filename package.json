@@ -10,5 +10,9 @@
       "monk":   ">= 0.8.1",
       "express":">= 3.1.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/depeele/angular-express-monk.git"
+  },
   "main": "index.js"
 }
