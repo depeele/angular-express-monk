@@ -86,8 +86,6 @@ function _initialize(config)
 
     self.collections = {};
 
-    self.use( Express.static( self.appPath ) );
-
     /* To avoid connect deprecation warnings for 'multipart' from
      *  self.use(Express.bodyParser());
      *
@@ -206,6 +204,9 @@ function _initialize(config)
                     .success(function()  { res.json(doc); });
             });
     });
+
+    // Last of all, include a static router.
+    self.use( Express.static( self.appPath ) );
 
     /********************************************************************
      * Start the server.
