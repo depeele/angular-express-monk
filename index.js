@@ -3,7 +3,7 @@
  *  uses MongoDB via Monk.
  *
  *  This server will make the MongoDB database indicated by `config.dbUrl`
- *  available in a RESTFUL CRUD mode via the '/api' URL.
+ *  available in a RESTFUL CRUD mode via the '/api' (self.apiPath) URL.
  *
  *  The Angular app is served from the directory indicated by `config.appPath`.
  *
@@ -11,13 +11,15 @@
  *      var app = require('angular-express-monk')({
  *                  port:   8080,
  *                  dbUrl:  'mongodb://localhost/mydb',
- *                  appPath:'./angularApp'
+ *                  appPath:'./angularApp',
+ *                  apiPath:'/api'
  *                });
  */
-var Path    = require('path'),
-    _       = require('lodash'),
-    Express = require('express'),
-    Monk    = require('monk');
+var Path        = require('path'),
+    _           = require('lodash'),
+    Express     = require('express'),
+    BodyParser  = require('body-parser'),
+    Monk        = require('monk');
 
 /**
  *  Create a new express-based application server.
@@ -29,6 +31,9 @@ var Path    = require('path'),
  *  @param  [config.appPath=process.cwd() +'/app]
  *                              The directory containing the angular
  *                              application {String};
+ *  @param  [config.apiPath='/api']
+ *                              The URL to use for direct database access
+ *                              {String};
  *
  *  @return A new Express Application instance {Object};
  */
@@ -77,6 +82,7 @@ function _initialize(config)
         port:       { value: (config.port || 8000) },
         appPath:    { value: (config.appPath ||
                                 Path.join(process.cwd(), 'app')) },
+        apiPath:    { value: (config.apiPath || '/api') },
 
         reName:     { value: new RegExp('^'+ config.dbName +'\.') },
 
@@ -98,7 +104,17 @@ function _initialize(config)
      * API routes
      *
      */
-    self.get('/api', function(req, res) {
+    self.param('cname', function(req, res, next, cname) {
+        req.collection = self.collections[cname];
+
+        if (req.collection == null) {
+            req.collection = self.collections[cname] = self.Db.get(cname);
+        }
+
+        return next();
+    });
+
+    self.get(self.apiPath, function(req, res) {
         self.db.collectionNames(function(e, names) {
             res.json(
                 _.map(names, function(item) {
@@ -110,15 +126,9 @@ function _initialize(config)
         });
     });
     
-    self.get('/api/:cname', function(req, res) {
-        var name        = req.params.cname.replace(self.reName, ''),
-            collection  = self.collections[name],
-            query;
+    self.get(self.apiPath +'/:cname', function(req, res) {
+        var query;
             
-        if (collection == null) {
-            collection = self.collections[name] = self.Db.get(name);
-        }
-
         if (! _.isEmpty(req.query))
         {
             /* See if we have any keys/values that need to be interpreted:
@@ -133,7 +143,7 @@ function _initialize(config)
             query = _createQuery(req.query);
         }
     
-        collection.find( query )
+        req.collection.find( query )
             .complete(function(err, docs) {
                 res.json(docs);
             });
@@ -144,59 +154,31 @@ function _initialize(config)
      *
      * Create
      */
-    self.post('/api/:name', function(req, res) {
-        var name        = req.params.name.replace(self.reName, ''),
-            collection  = self.collections[name];
-            
-        if (collection == null) {
-            collection = self.collections[name] = self.Db.get(name);
-        }
-    
-        collection.insert( req.body )
+    self.post(self.apiPath +'/:cname', function(req, res) {
+        req.collection.insert( req.body )
             .error(function(err)    { res.json({error:err}); })
             .success(function(doc)  { res.json(doc); });
     });
 
     // Read
-    self.get('/api/:name/:id', function(req, res) {
-        var name        = req.params.name.replace(self.reName, ''),
-            collection  = self.collections[name];
-            
-        if (collection == null) {
-            collection = self.collections[name] = self.Db.get(name);
-        }
-    
-        collection.findById( req.params.id )
+    self.get(self.apiPath +'/:cname/:id', function(req, res) {
+        req.collection.findById( req.params.id )
             .error(function(err)    { res.json({error:err}); })
             .success(function(doc)  { res.json(doc); });
     });
 
     // Update
-    self.put('/api/:name/:id', function(req, res) {
-        var name        = req.params.name.replace(self.reName, ''),
-            collection  = self.collections[name];
-            
-        if (collection == null) {
-            collection = self.collections[name] = self.Db.get(name);
-        }
-    
+    self.put(self.apiPath +'/:cname/:id', function(req, res) {
         // First, find the matching doc so we can return it on success
-        collection.update( req.params.id, {$set: req.body} )
+        req.collection.update( req.params.id, {$set: req.body} )
             .error(function(err)    { res.json({error:err}); })
             .success(function(doc)  { res.json(doc); });
     });
 
     // Delete
-    self.delete('/api/:name/:id', function(req, res) {
-        var name        = req.params.name.replace(self.reName, ''),
-            collection  = self.collections[name];
-            
-        if (collection == null) {
-            collection = self.collections[name] = self.Db.get(name);
-        }
-    
+    self.delete(self.apiPath +'/:cname/:id', function(req, res) {
         // First, find the matching doc so we can return it on success
-        collection.findById( req.params.id )
+        req.collection.findById( req.params.id )
             .error(function(err)    { res.json({error:err}); })
             .success(function(doc)  {
                 collection.remove( req.params.id )
@@ -206,7 +188,8 @@ function _initialize(config)
     });
 
     // Last of all, include a static router.
-    self.use( Express.static( self.appPath ) );
+    self.use( BodyParser() )
+        .use( Express.static( self.appPath ) );
 
     /********************************************************************
      * Start the server.
@@ -214,8 +197,8 @@ function _initialize(config)
      */
     self.server = self.listen(self.port, function() {
         console.log("Listening on port %d:", self.server.address().port);
-        console.log("   /       => %s", self.appPath);
-        console.log("   /api    => %s", self.dbUrl);
+        console.log("   /  => %s", self.appPath);
+        console.log("   %s => %s", self.apiPath, self.dbUrl);
     });
 }
 
